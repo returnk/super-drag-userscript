@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         极简超级鼠标拖拽 (Super Drag v3.4 工业加固版)
 // @namespace    http://tampermonkey.net/
-// @version      3.5.1
+// @version      3.5.2
 // @description  鼠标左键拖拽选中文本、链接、图片快速搜索与打开。就地内联通知、域名严格匹配、智能协议补齐、防配置雪崩与全闭环抗抖手势（架构加固版）。
 // @author       lyscop (Refactored) & Gemini Architecture
 // @updateURL    https://raw.githubusercontent.com/returnk/super-drag-userscript/main/super-drag.user.js
@@ -182,7 +182,8 @@
             try {
                 const probe = template.replace(/U-R-L|%s/g, 'TEST');
                 const u = new URL(probe);
-                return SKRBT_HOSTS.has(u.hostname.toLowerCase()) && u.pathname.replace(/\/+$/, '') === '/search';
+                const host = u.hostname.toLowerCase().replace(/^www\./, '');
+                return SKRBT_HOSTS.has(host) && u.pathname.replace(/\/+$/, '') === '/search';
             } catch (e) {
                 return false;
             }
@@ -203,7 +204,8 @@
         }
 
         function consumeSkrbtPendingSearch() {
-            if (!SKRBT_HOSTS.has(window.location.hostname.toLowerCase())) return;
+            const host = window.location.hostname.toLowerCase().replace(/^www\./, '');
+            if (!SKRBT_HOSTS.has(host)) return;
             if (window.location.origin !== SKRBT_PRIMARY_ORIGIN) return;
             if (window.location.pathname !== '/' || window.location.search) return;
 
@@ -249,6 +251,211 @@
 
             submitPending();
         }
+
+
+        // SkrBT 搜索结果磁链快捷操作：仅在用户点击时按需请求详情页，不做批量预取。
+        const SkrbtMagnetActions = (function () {
+            const cache = new Map();
+            let observer = null;
+
+            function isSkrbtSearchPage() {
+                const host = window.location.hostname.toLowerCase().replace(/^www\./, '');
+                return SKRBT_HOSTS.has(host) && window.location.pathname.startsWith('/search');
+            }
+
+            function extractMagnet(html) {
+                const detailDocument = new DOMParser().parseFromString(html, 'text/html');
+                const directMagnet = detailDocument.querySelector(
+                    '#magnet[href^="magnet:?xt=urn:btih:"], a[href^="magnet:?xt=urn:btih:"]'
+                )?.getAttribute('href');
+
+                if (/^magnet:\?xt=urn:btih:[a-z0-9]+/i.test(directMagnet || '')) {
+                    return directMagnet;
+                }
+
+                const decoded = html.replaceAll('&amp;', '&').replaceAll('&#38;', '&');
+                return decoded.match(/magnet:\?xt=urn:btih:[a-z0-9]+(?:&[^\s"'<>]*)*/i)?.[0] || null;
+            }
+
+            function requestMagnet(detailUrl) {
+                const cacheKey = new URL(detailUrl, window.location.href).href;
+                if (cache.has(cacheKey)) return cache.get(cacheKey);
+
+                const request = fetch(cacheKey, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { Accept: 'text/html' }
+                })
+                    .then(response => {
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        return response.text();
+                    })
+                    .then(html => {
+                        const magnet = extractMagnet(html);
+                        if (!magnet) throw new Error('详情页没有找到磁力链接');
+                        return magnet;
+                    })
+                    .catch(error => {
+                        cache.delete(cacheKey);
+                        throw error;
+                    });
+
+                cache.set(cacheKey, request);
+                return request;
+            }
+
+            async function runAction(button, detailUrl, action, successText) {
+                const originalText = button.textContent;
+                const originalTitle = button.title;
+
+                button.disabled = true;
+                button.textContent = '获取中...';
+
+                try {
+                    const magnet = await requestMagnet(detailUrl);
+                    action(magnet);
+                    button.textContent = successText;
+                    await new Promise(resolve => setTimeout(resolve, 900));
+                } catch (error) {
+                    button.textContent = '获取失败';
+                    button.title = error instanceof Error ? error.message : String(error);
+                    await new Promise(resolve => setTimeout(resolve, 1400));
+                } finally {
+                    button.disabled = false;
+                    button.textContent = originalText;
+                    button.title = originalTitle;
+                }
+            }
+
+            function createActions(detailUrl) {
+                const actions = document.createElement('span');
+                actions.className = 'sd-skrbt-magnet-actions';
+
+                const openButton = document.createElement('button');
+                openButton.type = 'button';
+                openButton.className = 'sd-skrbt-magnet-btn sd-skrbt-magnet-open';
+                openButton.textContent = '打开';
+                openButton.title = '获取磁力链接并打开';
+                openButton.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    runAction(
+                        openButton,
+                        detailUrl,
+                        magnet => { window.location.href = magnet; },
+                        '✓ 已打开'
+                    );
+                });
+
+                const copyButton = document.createElement('button');
+                copyButton.type = 'button';
+                copyButton.className = 'sd-skrbt-magnet-btn sd-skrbt-magnet-copy';
+                copyButton.textContent = '复制';
+                copyButton.title = '获取磁力链接并复制';
+                copyButton.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    runAction(
+                        copyButton,
+                        detailUrl,
+                        magnet => GM_setClipboard(magnet, 'text'),
+                        '✓ 已复制'
+                    );
+                });
+
+                actions.append(openButton, copyButton);
+                return actions;
+            }
+
+            function enhanceNewLayout() {
+                let added = 0;
+                document.querySelectorAll('ul.list-unstyled').forEach(result => {
+                    if (result.querySelector(':scope .sd-skrbt-magnet-actions')) return;
+
+                    const metaRow = result.querySelector(':scope > .rrmi');
+                    const detailLink = metaRow?.querySelector('a[href*="/detail/"]');
+                    if (!metaRow || !detailLink) return;
+
+                    metaRow.appendChild(createActions(detailLink.href));
+                    added += 1;
+                });
+                return added;
+            }
+
+            function enhanceLegacyLayout() {
+                let added = 0;
+                document.querySelectorAll('.panel.panel-default').forEach(panel => {
+                    if (panel.querySelector('.sd-skrbt-magnet-actions')) return;
+
+                    const footer = panel.querySelector('.panel-footer');
+                    const detailLink =
+                        footer?.querySelector('a[href*="/detail/"]')
+                        || panel.querySelector('.panel-title a[href*="/detail/"]');
+
+                    if (!footer || !detailLink) return;
+                    footer.prepend(createActions(detailLink.href));
+                    added += 1;
+                });
+                return added;
+            }
+
+            function enhance() {
+                if (!isSkrbtSearchPage()) return 0;
+                return enhanceNewLayout() + enhanceLegacyLayout();
+            }
+
+            function init() {
+                if (!isSkrbtSearchPage()) return;
+
+                GM_addStyle(`
+                    .sd-skrbt-magnet-actions {
+                        display: inline-flex !important;
+                        align-items: center !important;
+                        gap: 5px !important;
+                        margin-left: 8px !important;
+                        vertical-align: middle !important;
+                    }
+                    .sd-skrbt-magnet-btn {
+                        padding: 2px 8px !important;
+                        border: 1px solid transparent !important;
+                        border-radius: 4px !important;
+                        font: inherit !important;
+                        font-size: 12px !important;
+                        line-height: 1.5 !important;
+                        cursor: pointer !important;
+                    }
+                    .sd-skrbt-magnet-open {
+                        color: #fff !important;
+                        background: #2878b5 !important;
+                        border-color: #21699f !important;
+                    }
+                    .sd-skrbt-magnet-copy {
+                        color: #17633a !important;
+                        background: #eef9f2 !important;
+                        border-color: #9bcdb0 !important;
+                    }
+                    .sd-skrbt-magnet-btn:disabled {
+                        cursor: wait !important;
+                        opacity: .68 !important;
+                    }
+                `);
+
+                enhance();
+
+                observer = new MutationObserver(() => enhance());
+                observer.observe(document.body, { childList: true, subtree: true });
+
+                // 结果页通常很快稳定，避免永久观察 DOM。
+                setTimeout(() => {
+                    if (observer) {
+                        observer.disconnect();
+                        observer = null;
+                    }
+                }, 15000);
+            }
+
+            return { init };
+        })();
 
         const Actions = {
             searchText(arg, data) {
@@ -1702,6 +1909,7 @@
         `);
 
         consumeSkrbtPendingSearch();
+        SkrbtMagnetActions.init();
         DragEngine.init();
     } catch (err) {
         console.warn('[SuperDrag] 脚本运行异常静默容错:', err);

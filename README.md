@@ -4,7 +4,7 @@
 
 ## 当前版本
 
-- **v3.5.0**
+- **v3.5.1**
 - 主脚本：`super-drag.user.js`
 
 ## 主要功能
@@ -55,3 +55,24 @@ super-drag-userscript/
 ## 说明
 
 本项目主要用于个人日常浏览器工作流。默认搜索规则和快捷动作可在脚本设置中心自行调整。
+
+
+## 自动更新
+
+主脚本已经配置 GitHub 更新地址：
+
+- `@updateURL` 指向仓库 main 分支的 `super-drag.user.js`
+- `@downloadURL` 指向同一 Raw 文件
+
+首次从 GitHub Raw 安装/覆盖后，Tampermonkey 后续可按 `@version` 检查更新。
+
+## SkrBT 兼容
+
+SkrBT 对外部直接打开 `/search?keyword=...` 的访问会回到首页。v3.5.1 起，拖拽到 SkrBT 搜索时会自动：
+
+1. 记录搜索词
+2. 打开 `https://skrbtso.cc/`
+3. 自动填入网站原生搜索框
+4. 自动提交搜索表单
+
+用户操作仍然保持“一次拖拽即可搜索”。

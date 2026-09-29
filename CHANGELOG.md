@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.5.1] - 2026-09-29
+
+### 修复
+
+- 修复 SkrBT 直接打开搜索 URL 会被服务器重定向回首页、导致搜索词丢失的问题
+- SkrBT 搜索改为“首页中转 + 自动填写 + 原生表单提交”
+- 兼容旧的 `skrbtso.top` / `skrbtun.top` 搜索配置，并统一转到当前主地址 `skrbtso.cc`
+
+### 维护
+
+- 新增 `SkrBT 搜索` 预设
+- 增加 GitHub `@updateURL` / `@downloadURL`
+- 版本号升级到 `3.5.1`
+
 本文件记录 Super Drag Userscript 的稳定版本变化。
 
 ## [3.5.0] - 2026-09-29

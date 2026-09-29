@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         极简超级鼠标拖拽 (Super Drag v3.4 工业加固版)
 // @namespace    http://tampermonkey.net/
-// @version      3.5.0
+// @version      3.5.1
 // @description  鼠标左键拖拽选中文本、链接、图片快速搜索与打开。就地内联通知、域名严格匹配、智能协议补齐、防配置雪崩与全闭环抗抖手势（架构加固版）。
 // @author       lyscop (Refactored) & Gemini Architecture
+// @updateURL    https://raw.githubusercontent.com/returnk/super-drag-userscript/main/super-drag.user.js
+// @downloadURL  https://raw.githubusercontent.com/returnk/super-drag-userscript/main/super-drag.user.js
 // @match        *://*/*
 // @run-at       document-end
 // @grant        GM_openInTab
@@ -84,6 +86,7 @@
             { name: "JavDB 番号", url: "https://javdb.com/search?q=%s", alias: "JavDB" },
             { name: "Supjav 搜索", url: "https://supjav.com/zh/?s=%s", alias: "Supjav" },
             { name: "JavGiga 搜索", url: "https://javgiga.com/?s=%s", alias: "JavGiga" },
+            { name: "SkrBT 搜索", url: "https://skrbtso.cc/search?keyword=%s", alias: "SkrBT" },
             { name: "谷歌搜索", url: "https://www.google.com/search?q=%s", alias: "谷歌搜索" },
             { name: "百度搜索", url: "https://www.baidu.com/s?wd=%s", alias: "百度搜索" },
             { name: "必应 Bing", url: "https://www.bing.com/search?q=%s", alias: "Bing" },
@@ -168,11 +171,99 @@
             }
         }
 
+
+        const SKRBT_PENDING_KEY = '__SUPER_DRAG_SKRBT_PENDING__';
+        const SKRBT_PRIMARY_ORIGIN = 'https://skrbtso.cc';
+        const SKRBT_HOSTS = new Set(['skrbtso.cc', 'skrbtso.top', 'skrbtun.top']);
+        const SKRBT_PENDING_TTL = 30 * 1000;
+
+        function isSkrbtSearchTemplate(template) {
+            if (!template || typeof template !== 'string') return false;
+            try {
+                const probe = template.replace(/U-R-L|%s/g, 'TEST');
+                const u = new URL(probe);
+                return SKRBT_HOSTS.has(u.hostname.toLowerCase()) && u.pathname.replace(/\/+$/, '') === '/search';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function queueSkrbtSearch(query, active, insert) {
+            GM_setValue(SKRBT_PENDING_KEY, {
+                query,
+                origin: SKRBT_PRIMARY_ORIGIN,
+                createdAt: Date.now()
+            });
+
+            GM_openInTab(SKRBT_PRIMARY_ORIGIN + '/', {
+                active: Boolean(active),
+                insert: Boolean(insert),
+                setParent: true
+            });
+        }
+
+        function consumeSkrbtPendingSearch() {
+            if (!SKRBT_HOSTS.has(window.location.hostname.toLowerCase())) return;
+            if (window.location.origin !== SKRBT_PRIMARY_ORIGIN) return;
+            if (window.location.pathname !== '/' || window.location.search) return;
+
+            const pending = GM_getValue(SKRBT_PENDING_KEY, null);
+            if (!pending || typeof pending !== 'object') return;
+
+            const query = typeof pending.query === 'string' ? pending.query.trim() : '';
+            const createdAt = Number(pending.createdAt) || 0;
+            const isFresh = Date.now() - createdAt >= 0 && Date.now() - createdAt <= SKRBT_PENDING_TTL;
+
+            if (!query || pending.origin !== SKRBT_PRIMARY_ORIGIN || !isFresh) {
+                GM_deleteValue(SKRBT_PENDING_KEY);
+                return;
+            }
+
+            const submitPending = (retry = 0) => {
+                const form = document.querySelector('form[action="/search"], form[action$="/search"]');
+                const input = form ? form.querySelector('[name="keyword"]') : null;
+
+                if (!form || !input) {
+                    if (retry < 10) {
+                        setTimeout(() => submitPending(retry + 1), 200);
+                    } else {
+                        GM_deleteValue(SKRBT_PENDING_KEY);
+                        console.warn('[SuperDrag] SkrBT 搜索表单未找到，已取消自动提交');
+                    }
+                    return;
+                }
+
+                // 提交前先消费，避免异常回到首页后形成循环
+                GM_deleteValue(SKRBT_PENDING_KEY);
+
+                input.value = query;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+
+                if (typeof form.requestSubmit === 'function') {
+                    form.requestSubmit();
+                } else {
+                    form.submit();
+                }
+            };
+
+            submitPending();
+        }
+
         const Actions = {
             searchText(arg, data) {
                 const [baseUrl, active = true, insert = true] = arg;
                 const raw = data.textSelection || '';
                 const query = raw.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+                if (!query) return;
+
+                // SkrBT 会把“外部直接打开 /search?keyword=...”重定向回首页。
+                // 这里先打开本站首页，再由新标签页里的本脚本自动填写并提交原生搜索表单。
+                if (isSkrbtSearchTemplate(baseUrl)) {
+                    queueSkrbtSearch(query, active, insert);
+                    return;
+                }
+
                 const url = buildUrl(baseUrl, query);
                 GM_openInTab(url, { active: Boolean(active), insert: Boolean(insert), setParent: true });
             },
@@ -1610,6 +1701,7 @@
             }
         `);
 
+        consumeSkrbtPendingSearch();
         DragEngine.init();
     } catch (err) {
         console.warn('[SuperDrag] 脚本运行异常静默容错:', err);

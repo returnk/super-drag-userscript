@@ -86,19 +86,27 @@ test('SkrBT opens immediately without a connection probe', () => {
     assert.equal(pending.query, 'test');
 });
 
-test('publication menu opens the publication page on click only', () => {
+for (const host of ['skrbtso.cc', 'skrbtso.top', 'skrbtun.top', 'www.skrbtso.top', 'example.com', 'skrbtso.top.example.com']) {
+test(`publication menu is scoped correctly on ${host}`, () => {
     const menus = new Map();
     const opened = [];
     const context = {
         GM_registerMenuCommand: (name, callback) => menus.set(name, callback),
         GM_openInTab: url => opened.push(url),
-        Settings: { toggle() {} }, SKRBT_PUBLICATION_URL: 'https://btskr.net/'
+        Settings: { toggle() {} }, SKRBT_PUBLICATION_URL: 'https://btskr.net/',
+        window: { location: { hostname: host } },
+        SKRBT_HOSTS: new Set(['skrbtso.cc', 'skrbtso.top', 'skrbtun.top'])
     };
     vm.createContext(context);
     const start = script.indexOf("if (typeof GM_registerMenuCommand");
     vm.runInContext(script.slice(start, script.indexOf('GM_addStyle(', start)), context);
     assert.equal(opened.length, 0);
-    assert.ok(menus.has('打开 SkrBT 发布页'));
-    menus.get('打开 SkrBT 发布页')();
-    assert.deepEqual(opened, ['https://btskr.net/']);
+    assert.ok(menus.has('拖拽扩展设置中心'));
+    const expected = ['skrbtso.cc', 'skrbtso.top', 'skrbtun.top', 'www.skrbtso.top'].includes(host);
+    assert.equal(menus.has('打开 SkrBT 发布页'), expected);
+    if (expected) {
+        menus.get('打开 SkrBT 发布页')();
+        assert.deepEqual(opened, ['https://btskr.net/']);
+    }
 });
+}

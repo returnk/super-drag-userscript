@@ -4,7 +4,7 @@
 
 ## 当前版本
 
-- **v3.6.3**
+- **v3.6.4**
 - 主脚本：`super-drag.user.js`
 
 ## 主要功能
@@ -68,7 +68,7 @@ super-drag-userscript/
 
 ## SkrBT 兼容
 
-v3.6.3 起，拖拽后直接打开 SkrBT 搜索，不再预先检测连接或自动跳转。站点无法访问时，点击 Tampermonkey 图标，在本脚本菜单选择“打开 SkrBT 发布页”，即可打开 `https://btskr.net/` 查找最新地址。
+拖拽后直接打开 SkrBT 搜索，不预先检测连接或自动跳转。“打开 SkrBT 发布页”菜单仅在 `skrbtso.cc`、`skrbtso.top`、`skrbtun.top` 及其 www 地址显示，点击后打开 `https://btskr.net/`。其他网站只保留脚本设置入口。站点完全无法加载时菜单可能不可用，建议同时收藏发布页。
 
 v3.6.1 使用仅在拖拽期间存在的透明接收层接住播放器区域的 `drop`；移除 `dragend` 强制执行兜底。浏览器用 Esc 结束拖拽、即使没有发送 `keydown`，也不会在缺少 `drop` 时执行搜索。接收层在结束或取消时移除；真实播放器仍需安装后复测。
 

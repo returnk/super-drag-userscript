@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         极简超级鼠标拖拽 (Super Drag v3.4 工业加固版)
 // @namespace    http://tampermonkey.net/
-// @version      3.6.3
+// @version      3.6.4
 // @description  鼠标左键拖拽选中文本、链接、图片快速搜索与打开。就地内联通知、域名严格匹配、智能协议补齐、防配置雪崩与全闭环抗抖手势（架构加固版）。
 // @author       lyscop (Refactored) & Gemini Architecture
 // @updateURL    https://raw.githubusercontent.com/returnk/super-drag-userscript/main/super-drag.user.js
@@ -1761,9 +1761,11 @@
 
         if (typeof GM_registerMenuCommand !== 'undefined') {
             GM_registerMenuCommand('拖拽扩展设置中心', () => Settings.toggle());
-            GM_registerMenuCommand('打开 SkrBT 发布页', () => {
-                GM_openInTab(SKRBT_PUBLICATION_URL, { active: true, insert: true, setParent: true });
-            });
+            if (SKRBT_HOSTS.has(window.location.hostname.toLowerCase().replace(/^www\./, ''))) {
+                GM_registerMenuCommand('打开 SkrBT 发布页', () => {
+                    GM_openInTab(SKRBT_PUBLICATION_URL, { active: true, insert: true, setParent: true });
+                });
+            }
         }
 
         GM_addStyle(`

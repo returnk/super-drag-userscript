@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         极简超级鼠标拖拽 (Super Drag v3.4 工业加固版)
 // @namespace    http://tampermonkey.net/
-// @version      3.5.2
+// @version      3.5.3
 // @description  鼠标左键拖拽选中文本、链接、图片快速搜索与打开。就地内联通知、域名严格匹配、智能协议补齐、防配置雪崩与全闭环抗抖手势（架构加固版）。
 // @author       lyscop (Refactored) & Gemini Architecture
 // @updateURL    https://raw.githubusercontent.com/returnk/super-drag-userscript/main/super-drag.user.js
@@ -862,6 +862,7 @@
             let isDragging = false;
             let hasDropped = false;
             let isCanceled = false;
+            let lastDragOverAt = null;
 
             function isDomainBlocked() {
                 if (!cfg.blacklist) return false;
@@ -974,6 +975,7 @@
                 }
 
                 isDragging = true;
+                lastDragOverAt = null;
                 hasDropped = false;
                 isCanceled = false;
                 directions = [];
@@ -1006,6 +1008,7 @@
 
             function handleDragOver(e) {
                 if (isDragging && !isCanceled) {
+                    lastDragOverAt = Date.now();
                     e.preventDefault();
                     if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
                 }
@@ -1019,11 +1022,23 @@
                 }
             }
 
-            function handleDragEnd() {
+            function handleDragEnd(e) {
                 if (!isDragging) return;
                 HUD.hide();
 
-                if (hasDropped && !isCanceled && directions.length > 0 && dragType) {
+                // 部分网页松手时缺失 drop；只在近期经过当前页面、仍聚焦且松手在页面内时兜底。
+                // 1 秒之外保守放弃，避免把长时间中断的拖拽当成搜索。
+                const endTarget = !hasDropped && e.clientX > 0 && e.clientY > 0 &&
+                    e.clientX < window.innerWidth && e.clientY < window.innerHeight &&
+                    document.hasFocus() && lastDragOverAt !== null &&
+                    Date.now() - lastDragOverAt <= 1000 &&
+                    document.elementFromPoint(e.clientX, e.clientY);
+                const endedInPage = endTarget && !['IFRAME', 'FRAME'].includes(endTarget.tagName);
+                if (!hasDropped && endedInPage) {
+                    lastPos = { x: e.clientX, y: e.clientY };
+                }
+
+                if ((hasDropped || endedInPage) && !isCanceled && directions.length > 0 && dragType) {
                     const actionObj = matchAction(dragType, directions, lastPos.x, lastPos.y);
                     if (actionObj && Actions[actionObj.name]) {
                         try {

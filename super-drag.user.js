@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         极简超级鼠标拖拽 (Super Drag v3.4 工业加固版)
 // @namespace    http://tampermonkey.net/
-// @version      3.6.1
+// @version      3.6.2
 // @description  鼠标左键拖拽选中文本、链接、图片快速搜索与打开。就地内联通知、域名严格匹配、智能协议补齐、防配置雪崩与全闭环抗抖手势（架构加固版）。
 // @author       lyscop (Refactored) & Gemini Architecture
 // @updateURL    https://raw.githubusercontent.com/returnk/super-drag-userscript/main/super-drag.user.js
@@ -1011,13 +1011,17 @@
                 lastPos = { x: e.clientX, y: e.clientY };
                 // 接住跨源播放器上方的 drop，避免用 dragend 猜测松手或 Esc 取消。
                 removeDragReceiver();
-                dragReceiver = document.createElement('div');
-                dragReceiver.style.setProperty('all', 'initial', 'important');
-                for (const [name, value] of Object.entries({
-                    position: 'fixed', inset: '0', 'z-index': '2147483647',
-                    display: 'block', 'pointer-events': 'auto', background: 'transparent'
-                })) dragReceiver.style.setProperty(name, value, 'important');
-                document.documentElement.appendChild(dragReceiver);
+                // dragstart 内立即覆盖源元素会让 Chromium 中止原生文字拖拽。
+                setTimeout(() => {
+                    if (!isDragging || isCanceled) return;
+                    dragReceiver = document.createElement('div');
+                    dragReceiver.style.setProperty('all', 'initial', 'important');
+                    for (const [name, value] of Object.entries({
+                        position: 'fixed', inset: '0', 'z-index': '2147483647',
+                        display: 'block', 'pointer-events': 'auto', background: 'transparent'
+                    })) dragReceiver.style.setProperty(name, value, 'important');
+                    document.documentElement.appendChild(dragReceiver);
+                }, 0);
             }
 
             function handleDrag(e) {

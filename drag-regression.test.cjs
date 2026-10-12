@@ -11,6 +11,7 @@ function replay({ drop = false, cancel = false, rightClick = false, x = 421, y =
     let calls = 0;
     let now = 0;
     let layer = null;
+    const deferred = [];
     const context = {
         window: {
             location: { hostname: 'example.com' }, innerWidth: 1000, innerHeight: 800,
@@ -24,6 +25,7 @@ function replay({ drop = false, cancel = false, rightClick = false, x = 421, y =
             hasFocus: () => focus, elementFromPoint: () => ({ tagName: frame ? 'IFRAME' : 'DIV' })
         },
         Date: { now: () => now },
+        setTimeout: callback => deferred.push(callback),
         cfg: { blacklist: '', Gesture: { distanceThreshold: 5, distanceSensitivity: 20 }, Drag: {}, [type]: defined ? { '9': { name: action, arg: [] } } : {} },
         HUD: { hide() {}, update() {} }, Toast: { show() {} },
         Actions: { [action]() { calls++; } }, recordMetric() {}, console
@@ -33,6 +35,8 @@ function replay({ drop = false, cancel = false, rightClick = false, x = 421, y =
     const target = type === 'image' ? { nodeName: 'IMG', src: 'https://example.com/image.png' } :
         type === 'link' ? { nodeName: 'A', closest: selector => selector === 'a, area' ? ({ href: 'https://example.com/', textContent: 'link' }) : null } : { nodeName: '#text' };
     handlers.dragstart({ target, clientX: 350, clientY: 135 });
+    assert.equal(layer, null, 'dragstart must finish before adding the receiver');
+    deferred.forEach(callback => callback());
     assert.ok(layer, 'drag receiver covers iframe during active drag');
     now = 48;
     handlers.drag({ clientX: 400, clientY: 183 });

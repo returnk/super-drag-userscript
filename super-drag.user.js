@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         极简超级鼠标拖拽 (Super Drag v3.4 工业加固版)
 // @namespace    http://tampermonkey.net/
-// @version      3.5.3
+// @version      3.6.0
 // @description  鼠标左键拖拽选中文本、链接、图片快速搜索与打开。就地内联通知、域名严格匹配、智能协议补齐、防配置雪崩与全闭环抗抖手势（架构加固版）。
 // @author       lyscop (Refactored) & Gemini Architecture
 // @updateURL    https://raw.githubusercontent.com/returnk/super-drag-userscript/main/super-drag.user.js
@@ -18,6 +18,7 @@
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
 // @grant        GM_addValueChangeListener
+// @connect      skrbtso.cc
 // @require      https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js
 // ==/UserScript==
 
@@ -174,6 +175,7 @@
 
         const SKRBT_PENDING_KEY = '__SUPER_DRAG_SKRBT_PENDING__';
         const SKRBT_PRIMARY_ORIGIN = 'https://skrbtso.cc';
+        const SKRBT_PUBLICATION_URL = 'https://btskr.net/';
         const SKRBT_HOSTS = new Set(['skrbtso.cc', 'skrbtso.top', 'skrbtun.top']);
         const SKRBT_PENDING_TTL = 30 * 1000;
 
@@ -190,17 +192,36 @@
         }
 
         function queueSkrbtSearch(query, active, insert) {
-            GM_setValue(SKRBT_PENDING_KEY, {
-                query,
-                origin: SKRBT_PRIMARY_ORIGIN,
-                createdAt: Date.now()
-            });
-
-            GM_openInTab(SKRBT_PRIMARY_ORIGIN + '/', {
-                active: Boolean(active),
-                insert: Boolean(insert),
-                setParent: true
-            });
+            let finished = false;
+            const finish = (failed) => {
+                if (finished) return;
+                finished = true;
+                if (!failed) {
+                    GM_setValue(SKRBT_PENDING_KEY, {
+                        query,
+                        origin: SKRBT_PRIMARY_ORIGIN,
+                        createdAt: Date.now()
+                    });
+                } else {
+                    Toast.show('SkrBT 访问失败，正在打开地址发布页');
+                }
+                GM_openInTab(failed ? SKRBT_PUBLICATION_URL : SKRBT_PRIMARY_ORIGIN + '/', {
+                    active: Boolean(active), insert: Boolean(insert), setParent: true
+                });
+            };
+            Toast.show('正在连接 SkrBT…');
+            try {
+                GM_xmlhttpRequest({
+                    method: 'HEAD', url: SKRBT_PRIMARY_ORIGIN + '/', timeout: 5000,
+                    onload: response => finish(response.status === 404 || response.status === 410 || response.status >= 500),
+                    onerror: () => finish(true),
+                    // 超时或脚本请求权限异常不能证明站点失效，仍打开原站。
+                    ontimeout: () => finish(false)
+                });
+            } catch (error) {
+                console.warn('[SuperDrag] SkrBT 连通性检查不可用，继续打开原站:', error);
+                finish(false);
+            }
         }
 
         function consumeSkrbtPendingSearch() {
@@ -1026,14 +1047,14 @@
                 if (!isDragging) return;
                 HUD.hide();
 
-                // 部分网页松手时缺失 drop；只在近期经过当前页面、仍聚焦且松手在页面内时兜底。
-                // 1 秒之外保守放弃，避免把长时间中断的拖拽当成搜索。
+                // 跨源播放器不会向父页面发送 dragover/drop，但源元素仍可收到 dragend。
+                // 页面内 iframe 松手允许兜底；普通区域仍要求最近 1 秒收到 dragover。
                 const endTarget = !hasDropped && e.clientX > 0 && e.clientY > 0 &&
                     e.clientX < window.innerWidth && e.clientY < window.innerHeight &&
                     document.hasFocus() && lastDragOverAt !== null &&
-                    Date.now() - lastDragOverAt <= 1000 &&
                     document.elementFromPoint(e.clientX, e.clientY);
-                const endedInPage = endTarget && !['IFRAME', 'FRAME'].includes(endTarget.tagName);
+                const endedInPage = endTarget && (['IFRAME', 'FRAME'].includes(endTarget.tagName) ||
+                    Date.now() - lastDragOverAt <= 1000);
                 if (!hasDropped && endedInPage) {
                     lastPos = { x: e.clientX, y: e.clientY };
                 }

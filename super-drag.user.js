@@ -18,7 +18,6 @@
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
 // @grant        GM_addValueChangeListener
-// @connect      skrbtso.cc
 // @require      https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js
 // ==/UserScript==
 

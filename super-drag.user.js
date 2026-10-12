@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         极简超级鼠标拖拽 (Super Drag v3.4 工业加固版)
 // @namespace    http://tampermonkey.net/
-// @version      3.6.0
+// @version      3.6.1
 // @description  鼠标左键拖拽选中文本、链接、图片快速搜索与打开。就地内联通知、域名严格匹配、智能协议补齐、防配置雪崩与全闭环抗抖手势（架构加固版）。
 // @author       lyscop (Refactored) & Gemini Architecture
 // @updateURL    https://raw.githubusercontent.com/returnk/super-drag-userscript/main/super-drag.user.js
@@ -883,7 +883,14 @@
             let isDragging = false;
             let hasDropped = false;
             let isCanceled = false;
-            let lastDragOverAt = null;
+            let dragReceiver = null;
+
+            function removeDragReceiver() {
+                if (dragReceiver) {
+                    dragReceiver.remove();
+                    dragReceiver = null;
+                }
+            }
 
             function isDomainBlocked() {
                 if (!cfg.blacklist) return false;
@@ -959,6 +966,7 @@
                 isCanceled = true;
                 hasDropped = false;
                 isDragging = false;
+                removeDragReceiver();
                 HUD.hide();
                 Toast.show('已取消拖拽操作');
             }
@@ -996,12 +1004,20 @@
                 }
 
                 isDragging = true;
-                lastDragOverAt = null;
                 hasDropped = false;
                 isCanceled = false;
                 directions = [];
                 startPos = { x: e.clientX, y: e.clientY };
                 lastPos = { x: e.clientX, y: e.clientY };
+                // 接住跨源播放器上方的 drop，避免用 dragend 猜测松手或 Esc 取消。
+                removeDragReceiver();
+                dragReceiver = document.createElement('div');
+                dragReceiver.style.setProperty('all', 'initial', 'important');
+                for (const [name, value] of Object.entries({
+                    position: 'fixed', inset: '0', 'z-index': '2147483647',
+                    display: 'block', 'pointer-events': 'auto', background: 'transparent'
+                })) dragReceiver.style.setProperty(name, value, 'important');
+                document.documentElement.appendChild(dragReceiver);
             }
 
             function handleDrag(e) {
@@ -1029,7 +1045,6 @@
 
             function handleDragOver(e) {
                 if (isDragging && !isCanceled) {
-                    lastDragOverAt = Date.now();
                     e.preventDefault();
                     if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
                 }
@@ -1043,23 +1058,13 @@
                 }
             }
 
-            function handleDragEnd(e) {
+            function handleDragEnd() {
+                removeDragReceiver();
                 if (!isDragging) return;
                 HUD.hide();
 
-                // 跨源播放器不会向父页面发送 dragover/drop，但源元素仍可收到 dragend。
-                // 页面内 iframe 松手允许兜底；普通区域仍要求最近 1 秒收到 dragover。
-                const endTarget = !hasDropped && e.clientX > 0 && e.clientY > 0 &&
-                    e.clientX < window.innerWidth && e.clientY < window.innerHeight &&
-                    document.hasFocus() && lastDragOverAt !== null &&
-                    document.elementFromPoint(e.clientX, e.clientY);
-                const endedInPage = endTarget && (['IFRAME', 'FRAME'].includes(endTarget.tagName) ||
-                    Date.now() - lastDragOverAt <= 1000);
-                if (!hasDropped && endedInPage) {
-                    lastPos = { x: e.clientX, y: e.clientY };
-                }
-
-                if ((hasDropped || endedInPage) && !isCanceled && directions.length > 0 && dragType) {
+                // 原生拖拽时 Esc 可能没有 keydown，只产生无 drop 的 dragend。
+                if (hasDropped && !isCanceled && directions.length > 0 && dragType) {
                     const actionObj = matchAction(dragType, directions, lastPos.x, lastPos.y);
                     if (actionObj && Actions[actionObj.name]) {
                         try {

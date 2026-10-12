@@ -67,34 +67,38 @@ for (const [name, options] of Object.entries({
 })) test(`${name} does not search`, () => assert.equal(replay(options), 0));
 
 const search = script.slice(script.indexOf('const SKRBT_PENDING_KEY'), script.indexOf('function consumeSkrbtPendingSearch'));
-function searchResult(result) {
+test('SkrBT opens immediately without a connection probe', () => {
     const opened = [];
-    const values = new Map();
+    let pending;
+    let probes = 0;
     const context = {
         URL, Date, console, Toast: { show() {} },
-        GM_setValue: (key, value) => values.set(key, value),
-        GM_openInTab: url => opened.push(url),
-        GM_xmlhttpRequest: options => {
-            if (result === 'error') options.onerror();
-            else if (result === 'timeout') options.ontimeout();
-            else options.onload({ status: result });
-        }
+        GM_setValue: (key, value) => { pending = value; },
+        GM_openInTab: (url, options) => opened.push({ url, options }),
+        GM_xmlhttpRequest: () => { probes++; }
     };
     vm.createContext(context);
-    vm.runInContext(`${search}; queueSkrbtSearch('test', true, true);`, context);
-    return { opened, pending: values.size };
-}
-for (const result of ['error', 404, 410, 500, 503]) {
-    test(`SkrBT failure ${result} opens publication page without pending search`, () => {
-        const actual = searchResult(result);
-        assert.deepEqual(actual.opened, ['https://btskr.net/']);
-        assert.equal(actual.pending, 0);
-    });
-}
-for (const result of [200, 403, 429, 'timeout']) {
-    test(`SkrBT ${result} keeps original search instead of declaring failure`, () => {
-        const actual = searchResult(result);
-        assert.deepEqual(actual.opened, ['https://skrbtso.cc/']);
-        assert.equal(actual.pending, 1);
-    });
-}
+    vm.runInContext(search + ";queueSkrbtSearch('test', false, true);", context);
+    assert.equal(probes, 0);
+    assert.equal(opened.length, 1);
+    assert.equal(opened[0].url, 'https://skrbtso.cc/');
+    assert.equal(opened[0].options.active, false);
+    assert.equal(pending.query, 'test');
+});
+
+test('publication menu opens the publication page on click only', () => {
+    const menus = new Map();
+    const opened = [];
+    const context = {
+        GM_registerMenuCommand: (name, callback) => menus.set(name, callback),
+        GM_openInTab: url => opened.push(url),
+        Settings: { toggle() {} }, SKRBT_PUBLICATION_URL: 'https://btskr.net/'
+    };
+    vm.createContext(context);
+    const start = script.indexOf("if (typeof GM_registerMenuCommand");
+    vm.runInContext(script.slice(start, script.indexOf('GM_addStyle(', start)), context);
+    assert.equal(opened.length, 0);
+    assert.ok(menus.has('打开 SkrBT 发布页'));
+    menus.get('打开 SkrBT 发布页')();
+    assert.deepEqual(opened, ['https://btskr.net/']);
+});

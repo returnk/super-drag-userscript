@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         极简超级鼠标拖拽 (Super Drag v3.4 工业加固版)
 // @namespace    http://tampermonkey.net/
-// @version      3.6.2
+// @version      3.6.3
 // @description  鼠标左键拖拽选中文本、链接、图片快速搜索与打开。就地内联通知、域名严格匹配、智能协议补齐、防配置雪崩与全闭环抗抖手势（架构加固版）。
 // @author       lyscop (Refactored) & Gemini Architecture
 // @updateURL    https://raw.githubusercontent.com/returnk/super-drag-userscript/main/super-drag.user.js
@@ -192,36 +192,14 @@
         }
 
         function queueSkrbtSearch(query, active, insert) {
-            let finished = false;
-            const finish = (failed) => {
-                if (finished) return;
-                finished = true;
-                if (!failed) {
-                    GM_setValue(SKRBT_PENDING_KEY, {
-                        query,
-                        origin: SKRBT_PRIMARY_ORIGIN,
-                        createdAt: Date.now()
-                    });
-                } else {
-                    Toast.show('SkrBT 访问失败，正在打开地址发布页');
-                }
-                GM_openInTab(failed ? SKRBT_PUBLICATION_URL : SKRBT_PRIMARY_ORIGIN + '/', {
-                    active: Boolean(active), insert: Boolean(insert), setParent: true
-                });
-            };
-            Toast.show('正在连接 SkrBT…');
-            try {
-                GM_xmlhttpRequest({
-                    method: 'HEAD', url: SKRBT_PRIMARY_ORIGIN + '/', timeout: 5000,
-                    onload: response => finish(response.status === 404 || response.status === 410 || response.status >= 500),
-                    onerror: () => finish(true),
-                    // 超时或脚本请求权限异常不能证明站点失效，仍打开原站。
-                    ontimeout: () => finish(false)
-                });
-            } catch (error) {
-                console.warn('[SuperDrag] SkrBT 连通性检查不可用，继续打开原站:', error);
-                finish(false);
-            }
+            GM_setValue(SKRBT_PENDING_KEY, {
+                query,
+                origin: SKRBT_PRIMARY_ORIGIN,
+                createdAt: Date.now()
+            });
+            GM_openInTab(SKRBT_PRIMARY_ORIGIN + '/', {
+                active: Boolean(active), insert: Boolean(insert), setParent: true
+            });
         }
 
         function consumeSkrbtPendingSearch() {
@@ -1784,6 +1762,9 @@
 
         if (typeof GM_registerMenuCommand !== 'undefined') {
             GM_registerMenuCommand('拖拽扩展设置中心', () => Settings.toggle());
+            GM_registerMenuCommand('打开 SkrBT 发布页', () => {
+                GM_openInTab(SKRBT_PUBLICATION_URL, { active: true, insert: true, setParent: true });
+            });
         }
 
         GM_addStyle(`
